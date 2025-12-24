@@ -20,7 +20,13 @@ const ExpenseSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
+        enum: ['Cash', 'Card', 'UPI', 'Wallet', 'Bank', 'Other'],
         default: 'Cash',
+    },
+    type: {
+        type: String,
+        enum: ['expense', 'income'], // Strictly allow these values
+        default: 'expense',
     },
     note: {
         type: String,

@@ -21,7 +21,8 @@ router.get('/', auth, async (req, res) => {
 // @desc    Add new expense
 // @access  Private
 router.post('/', auth, async (req, res) => {
-    const { amount, category, date, paymentMethod, note } = req.body;
+    console.log('POST /api/expenses body:', req.body);
+    const { amount, category, date, paymentMethod, note, type } = req.body;
 
     try {
         const newExpense = new Expense({
@@ -31,6 +32,7 @@ router.post('/', auth, async (req, res) => {
             date,
             paymentMethod,
             note,
+            type,
         });
 
         const expense = await newExpense.save();

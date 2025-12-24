@@ -31,7 +31,14 @@ function AppStack() {
     return (
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
             <Stack.Screen name="Dashboard" component={DashboardScreen} />
-            <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen
+                name="AddExpense"
+                component={AddExpenseScreen}
+                options={{
+                    presentation: 'modal',
+                    animation: 'slide_from_bottom'
+                }}
+            />
             <Stack.Screen name="Insights" component={InsightsScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
     )

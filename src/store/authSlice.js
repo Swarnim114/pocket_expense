@@ -1,9 +1,9 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AUTH_URL } from '../config';
 
-// Replace with your actual IP address for Android testing
-const API_URL = 'http://192.168.1.18:5000/api/auth';
+const API_URL = AUTH_URL;
 
 export const signup = createAsyncThunk('auth/signup', async (userData, { rejectWithValue }) => {
     try {

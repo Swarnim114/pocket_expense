@@ -2,9 +2,10 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { EXPENSES_URL, CATEGORIES_URL } from '../config';
 
 // Replace with your actual IP address
-const API_URL = 'http://192.168.1.18:5000/api/expenses';
+const API_URL = EXPENSES_URL;
 
 // Helper to get token
 const getConfig = async () => {
@@ -16,18 +17,22 @@ const getConfig = async () => {
     };
 };
 
+// --- Expenses Thunks ---
+
 export const fetchExpenses = createAsyncThunk('expenses/fetch', async (_, { rejectWithValue }) => {
     try {
         const netState = await NetInfo.fetch();
+        // If offline, reject so we don't overwrite local data with []
         if (!netState.isConnected) {
-            // If offline, rely on persisted state (simplification)
-            return []; // We will handle this by NOT replacing state if offline in reducer, or just returning null
+            return rejectWithValue('Offline - Using cached data');
         }
 
         const config = await getConfig();
         const response = await axios.get(API_URL, config);
+        console.log(`Fetched ${response.data.length} items`);
         return response.data;
     } catch (error) {
+        console.error('Fetch Error:', error);
         return rejectWithValue(error.response?.data || 'Network Error');
     }
 });
@@ -58,11 +63,7 @@ export const addExpense = createAsyncThunk('expenses/add', async (expenseData, {
 export const deleteExpense = createAsyncThunk('expenses/delete', async (id, { rejectWithValue }) => {
     try {
         const netState = await NetInfo.fetch();
-        if (!netState.isConnected) {
-            // Simple offline delete: just return ID to remove from local state
-            // Ideally we'd queue a delete action, but for now let's just allow local deletion
-            return id;
-        }
+        if (!netState.isConnected) return id;
 
         const config = await getConfig();
         await axios.delete(`${API_URL}/${id}`, config);
@@ -71,6 +72,39 @@ export const deleteExpense = createAsyncThunk('expenses/delete', async (id, { re
         return rejectWithValue(error.response?.data || 'Network Error');
     }
 });
+
+// --- Categories Thunks ---
+
+export const fetchCategories = createAsyncThunk('categories/fetch', async (_, { rejectWithValue }) => {
+    try {
+        const config = await getConfig();
+        const response = await axios.get(CATEGORIES_URL, config);
+        return response.data;
+    } catch (error) {
+        return rejectWithValue(error.response?.data || 'Network Error');
+    }
+});
+
+export const addCategory = createAsyncThunk('categories/add', async (catData, { rejectWithValue }) => {
+    try {
+        const config = await getConfig();
+        const response = await axios.post(CATEGORIES_URL, catData, config);
+        return response.data;
+    } catch (error) {
+        return rejectWithValue(error.response?.data || 'Network Error');
+    }
+});
+
+export const deleteCategory = createAsyncThunk('categories/delete', async (id, { rejectWithValue }) => {
+    try {
+        const config = await getConfig();
+        await axios.delete(`${CATEGORIES_URL}/${id}`, config);
+        return id;
+    } catch (error) {
+        return rejectWithValue(error.response?.data || 'Network Error');
+    }
+});
+
 
 export const syncPendingExpenses = createAsyncThunk('expenses/sync', async (_, { getState, dispatch }) => {
     const state = getState();
@@ -85,7 +119,7 @@ export const syncPendingExpenses = createAsyncThunk('expenses/sync', async (_, {
         try {
             // Remove temp ID and offline flag
             const { _id, isOffline, ...cleanItem } = item;
-            const response = await axios.post(API_URL, cleanItem, config);
+            const response = await axios.post(`${API_URL}/expenses`, cleanItem, config);
             syncedItems.push({ tempId: _id, realItem: response.data });
         } catch (e) {
             console.error("Sync failed for item", item, e);
@@ -98,29 +132,32 @@ const expensesSlice = createSlice({
     name: 'expenses',
     initialState: {
         items: [],
-        pendingQueue: [], // Items waiting to be synced
+        categories: [], // Stored categories
+        pendingQueue: [],
         isLoading: false,
         error: null,
     },
     reducers: {},
     extraReducers: (builder) => {
         builder
-            // Fetch
+            // Fetch Expenses
             .addCase(fetchExpenses.pending, (state) => {
                 state.isLoading = true;
             })
             .addCase(fetchExpenses.fulfilled, (state, action) => {
                 state.isLoading = false;
-                // Only replace items if we actually got data (online)
-                if (Array.isArray(action.payload) && action.payload.length > 0) {
+                // Only update if we have a valid array
+                if (Array.isArray(action.payload)) {
                     state.items = action.payload;
                 }
             })
             .addCase(fetchExpenses.rejected, (state, action) => {
                 state.isLoading = false;
+                // Don't clear items, just set error
+                // If it was the specific "Offline" message, we could set a flag
                 state.error = action.payload;
             })
-            // Add
+            // Add Expense
             .addCase(addExpense.fulfilled, (state, action) => {
                 const expense = action.payload;
                 if (expense.isOffline) {
@@ -128,20 +165,28 @@ const expensesSlice = createSlice({
                 }
                 state.items.unshift(expense);
             })
-            // Delete
+            // Delete Expense
             .addCase(deleteExpense.fulfilled, (state, action) => {
                 state.items = state.items.filter((item) => item._id !== action.payload);
-                // Also remove from pending if it was there
                 state.pendingQueue = state.pendingQueue.filter((item) => item._id !== action.payload);
+            })
+            // Fetch Categories
+            .addCase(fetchCategories.fulfilled, (state, action) => {
+                state.categories = action.payload;
+            })
+            // Add Category
+            .addCase(addCategory.fulfilled, (state, action) => {
+                state.categories.push(action.payload);
+            })
+            // Delete Category
+            .addCase(deleteCategory.fulfilled, (state, action) => {
+                state.categories = state.categories.filter(c => c._id !== action.payload);
             })
             // Sync
             .addCase(syncPendingExpenses.fulfilled, (state, action) => {
                 if (!action.payload) return;
-
                 action.payload.forEach(({ tempId, realItem }) => {
-                    // Remove from queue
                     state.pendingQueue = state.pendingQueue.filter(i => i._id !== tempId);
-                    // Update item in list (replace temp ID with real ID)
                     const index = state.items.findIndex(i => i._id === tempId);
                     if (index !== -1) {
                         state.items[index] = realItem;

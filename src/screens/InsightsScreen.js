@@ -1,90 +1,261 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { useSelector } from 'react-redux';
-import { PieChart } from 'react-native-chart-kit';
+import { BarChart, PieChart } from 'react-native-gifted-charts';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-// Lavender/Purple Palette for Chart
+// Custom Palette
 const CHART_COLORS = [
-    '#6750A4', // Primary Purple
-    '#E8DEF8', // Light Lavender
-    '#21005D', // Dark Violet
-    '#7D5260', // Rose
-    '#B3261E', // Error/Red (for contrast)
-    '#EA80FC', // Bright Pink
+    '#6750A4', // Purple
+    '#B58392', // Muted Pink
+    '#21005D', // Dark Purple
+    '#D0BCFF', // Light Purple
+    '#B3261E', // Red
+    '#EA80FC', // Neon Pink
+    '#006C4C', // Green
 ];
 
 export default function InsightsScreen({ navigation }) {
     const { items } = useSelector((state) => state.expenses);
+    const [focusedPieIndex, setFocusedPieIndex] = useState(null);
 
     // Aggregate Data
-    const chartData = useMemo(() => {
+    const { pieData, totalSpent, dailyAverage, weeklyData, topCategory, maxWeeklyValue } = useMemo(() => {
         const categoryTotals = {};
-        let totalSpent = 0;
+        const dailyTotals = {};
+        let total = 0;
 
-        items.forEach(item => {
+        // Filter for Expense only
+        const expenses = items.filter(i => i.type === 'expense' || !i.type);
+
+        expenses.forEach(item => {
             const amount = parseFloat(item.amount);
+            const date = new Date(item.date);
+            const dateStr = date.toISOString().split('T')[0];
             const cat = item.category || 'Uncategorized';
+
+            // Category Totals
             categoryTotals[cat] = (categoryTotals[cat] || 0) + amount;
-            totalSpent += amount;
+
+            // Daily Totals
+            dailyTotals[dateStr] = (dailyTotals[dateStr] || 0) + amount;
+
+            total += amount;
         });
 
-        const data = Object.keys(categoryTotals).map((cat, index) => ({
-            name: cat,
-            population: categoryTotals[cat],
+        // 1. Pie Chart Configuration
+        const sortedCategories = Object.keys(categoryTotals)
+            .sort((a, b) => categoryTotals[b] - categoryTotals[a]);
+
+        const pieChartData = sortedCategories.map((cat, index) => ({
+            value: categoryTotals[cat],
             color: CHART_COLORS[index % CHART_COLORS.length],
-            legendFontColor: '#49454F',
-            legendFontSize: 12,
+            text: `${Math.round((categoryTotals[cat] / total) * 100)}%`,
+            catName: cat,
+            amount: categoryTotals[cat],
+            focused: focusedPieIndex === index,
+            onPress: () => setFocusedPieIndex(index === focusedPieIndex ? null : index),
         }));
 
-        return { data, totalSpent };
-    }, [items]);
+        // 2. Bar Chart Configuration (Last 7 Days)
+        const barChartData = [];
+        const today = new Date();
+        const dayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+        let maxVal = 0;
+
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(today.getDate() - i);
+            const dStr = d.toISOString().split('T')[0];
+            const dayIndex = d.getDay();
+            const isToday = i === 0;
+            const val = dailyTotals[dStr] || 0;
+            if (val > maxVal) maxVal = val;
+
+            barChartData.push({
+                value: val,
+                label: dayNames[dayIndex],
+                frontColor: isToday ? '#6750A4' : '#E8DEF8',
+                spacing: 14,
+                labelTextStyle: { color: '#9CA3AF', fontSize: 12 },
+                topLabelComponent: () => (
+                    val > 0 ? <Text style={{ color: '#6750A4', fontSize: 10, marginBottom: 4 }}>${Math.round(val)}</Text> : null
+                )
+            });
+        }
+
+        const daysCount = Object.keys(dailyTotals).length || 1;
+        const avg = total / daysCount;
+        const topCat = sortedCategories.length > 0 ? sortedCategories[0] : '-';
+
+        return {
+            pieData: pieChartData,
+            totalSpent: total,
+            dailyAverage: avg,
+            weeklyData: barChartData,
+            topCategory: topCat,
+            maxWeeklyValue: maxVal
+        };
+    }, [items, focusedPieIndex]);
+
+    // Get currently focused details
+    const focusedCategory = useMemo(() => {
+        if (focusedPieIndex !== null && pieData[focusedPieIndex]) {
+            return pieData[focusedPieIndex];
+        }
+        return null; // Return null if nothing is focused (default state)
+    }, [pieData, focusedPieIndex]);
+
+    // Default to displaying top category if nothing focused
+    const displayCategoryName = focusedCategory ? focusedCategory.catName : topCategory;
+    // Calculate amount to display
+    const displayAmount = focusedCategory
+        ? focusedCategory.amount
+        : (pieData.length > 0 ? pieData[0].amount : 0);
+
+    const displayLabel = focusedCategory ? 'SELECTED' : 'TOP';
 
     return (
         <View className="flex-1 bg-[#F3EDF7]">
             <StatusBar style="dark" />
 
             {/* Header */}
-            <View className="pt-14 px-4 pb-4 bg-[#F3EDF7] flex-row items-center">
-                <TouchableOpacity onPress={() => navigation.goBack()} className="mr-3">
-                    <Ionicons name="arrow-back" size={24} color="#1D1B20" />
+            <View className="pt-14 px-4 pb-4 bg-[#F3EDF7] flex-row items-center justify-between z-10">
+                <View className="flex-row items-center">
+                    <TouchableOpacity onPress={() => navigation.goBack()} className="mr-3 p-2 bg-white rounded-full shadow-sm">
+                        <Ionicons name="arrow-back" size={24} color="#1D1B20" />
+                    </TouchableOpacity>
+                    <Text className="text-2xl font-bold text-[#1D1B20]">Analytics</Text>
+                </View>
+                <TouchableOpacity className="p-2">
+                    <Ionicons name="options-outline" size={24} color="#49454F" />
                 </TouchableOpacity>
-                <Text className="text-3xl font-bold text-[#1D1B20]">Spending Insights</Text>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
-                {/* Summary Card */}
-                <View className="bg-[#EADDFF] rounded-3xl p-6 mb-6 items-center shadow-sm">
-                    <Text className="text-[#21005D] text-lg font-medium mb-1">Total Spending</Text>
-                    <Text className="text-4xl font-bold text-[#6750A4]">${chartData.totalSpent.toFixed(2)}</Text>
-                </View>
+            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
-                {chartData.data.length > 0 ? (
-                    <View className="bg-white rounded-[32px] p-4 shadow-sm items-center">
-                        <Text className="text-lg font-bold text-[#1D1B20] mb-4 self-start ml-4 mt-2">Breakdown by Category</Text>
-
-                        <PieChart
-                            data={chartData.data}
-                            width={SCREEN_WIDTH - 64}
-                            height={220}
-                            chartConfig={{
-                                color: (opacity = 1) => `rgba(103, 80, 164, ${opacity})`,
-                            }}
-                            accessor="population"
-                            backgroundColor="transparent"
-                            paddingLeft="15"
-                            center={[20, 0]}
-                        />
+                {/* Key Metrics Row */}
+                <Animated.View entering={FadeInDown.delay(100).springify()} className="flex-row justify-between mb-6">
+                    <View className="bg-[#6750A4] rounded-[24px] p-5 flex-1 mr-3 shadow-lg shadow-purple-200">
+                        <View className="bg-white/20 self-start p-2 rounded-xl mb-3">
+                            <Ionicons name="wallet-outline" size={20} color="white" />
+                        </View>
+                        <Text className="text-white/80 text-xs font-medium uppercase tracking-wider mb-1">Total Spent</Text>
+                        <Text className="text-white text-2xl font-bold">${totalSpent.toFixed(0)}</Text>
                     </View>
+
+                    <View className="bg-white rounded-[24px] p-5 flex-1 ml-3 border border-gray-100 shadow-sm">
+                        <View className="bg-[#E8DEF8] self-start p-2 rounded-xl mb-3">
+                            <Ionicons name="trending-up" size={20} color="#6750A4" />
+                        </View>
+                        <Text className="text-[#49454F] text-xs font-medium uppercase tracking-wider mb-1">Daily Avg</Text>
+                        <Text className="text-[#1D1B20] text-2xl font-bold">${dailyAverage.toFixed(0)}</Text>
+                    </View>
+                </Animated.View>
+
+                {items.length > 0 ? (
+                    <>
+                        {/* Weekly Activity Chart - BAR CHART */}
+                        <Animated.View entering={FadeInDown.delay(200).springify()} className="bg-white rounded-[32px] p-5 mb-6 shadow-sm overflow-hidden">
+                            <View className="flex-row justify-between items-center mb-6">
+                                <Text className="text-lg font-bold text-[#1D1B20]">Weekly Activity</Text>
+                                <View className="bg-purple-50 px-2 py-1 rounded-lg">
+                                    <Text className="text-purple-700 text-xs font-bold">Last 7 Days</Text>
+                                </View>
+                            </View>
+
+                            <View style={{ alignItems: 'center', paddingRight: 20 }}>
+                                <BarChart
+                                    data={weeklyData}
+                                    barWidth={22}
+                                    noOfSections={3}
+                                    barBorderRadius={6}
+                                    frontColor="#E8DEF8"
+                                    yAxisThickness={0}
+                                    xAxisThickness={0}
+                                    hideRules
+                                    isAnimated
+                                    animationDuration={1000}
+                                    width={SCREEN_WIDTH - 100} // Ensuring it fits
+                                    height={180}
+                                    maxValue={maxWeeklyValue > 0 ? maxWeeklyValue * 1.2 : 100} // Add headroom
+                                    yAxisTextStyle={{ color: '#9CA3AF', fontSize: 10 }}
+                                />
+                            </View>
+                        </Animated.View>
+
+                        {/* Category Breakdown - PIE CHART */}
+                        <Animated.View entering={FadeInDown.delay(300).springify()} className="bg-white rounded-[32px] p-5 shadow-sm mb-6">
+                            <Text className="text-lg font-bold text-[#1D1B20] mb-6">By Category</Text>
+
+                            <View className="items-center mb-8 relative">
+                                <PieChart
+                                    data={pieData}
+                                    donut
+                                    radius={130}
+                                    innerRadius={75}
+                                    showText={false}
+                                    focusOnPress
+                                    toggleFocusOnPress
+                                    sectionAutoFocus
+                                    isAnimated
+                                    animationDuration={1000}
+                                    centerLabelComponent={() => (
+                                        <View className="justify-center items-center p-2">
+                                            <Text className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-1">
+                                                {displayLabel}
+                                            </Text>
+                                            <Text className="text-[#1D1B20] text-lg font-bold text-center" numberOfLines={1}>
+                                                {displayCategoryName}
+                                            </Text>
+                                            <Text className="text-[#6750A4] text-sm font-bold mt-1">
+                                                ${displayAmount.toFixed(0)}
+                                            </Text>
+                                        </View>
+                                    )}
+                                />
+                                {!focusedCategory && (
+                                    <View className="absolute bottom-[-20px]">
+                                        <Text className="text-gray-400 text-[10px] italic">Tap segments for details</Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Legend */}
+                            {pieData.map((item, index) => (
+                                <TouchableOpacity
+                                    key={index}
+                                    onPress={() => setFocusedPieIndex(index === focusedPieIndex ? null : index)}
+                                    className={`flex-row items-center justify-between py-3 border-b border-gray-50 last:border-0 ${focusedPieIndex === index ? 'bg-purple-50 -mx-5 px-5' : ''}`}
+                                >
+                                    <View className="flex-row items-center">
+                                        <View className="w-3 h-3 rounded-full mr-3" style={{ backgroundColor: item.color }} />
+                                        <Text className={`font-medium ${focusedPieIndex === index ? 'text-[#6750A4] font-bold' : 'text-[#49454F]'}`}>
+                                            {item.catName}
+                                        </Text>
+                                    </View>
+                                    <View className="items-end">
+                                        <Text className={`font-bold ${focusedPieIndex === index ? 'text-[#6750A4]' : 'text-[#1D1B20]'}`}>
+                                            ${item.amount.toFixed(0)}
+                                        </Text>
+                                        <Text className="text-gray-400 text-[10px]">{item.text}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </Animated.View>
+                    </>
                 ) : (
-                    <View className="items-center mt-10 opacity-50">
-                        <Ionicons name="pie-chart-outline" size={64} color="#49454F" />
-                        <Text className="text-[#49454F] mt-4 font-medium">No expenses to visualize yet.</Text>
+                    <View className="items-center mt-20 opacity-40">
+                        <Ionicons name="bar-chart" size={80} color="#49454F" />
+                        <Text className="text-[#49454F] mt-4 font-bold text-lg">No Data Available</Text>
+                        <Text className="text-[#49454F] text-center w-64 mt-2">Add some expenses to see your analytics come to life.</Text>
                     </View>
                 )}
+
             </ScrollView>
         </View>
     );
