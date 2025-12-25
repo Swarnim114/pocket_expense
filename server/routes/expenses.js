@@ -66,4 +66,42 @@ router.delete('/:id', auth, async (req, res) => {
     }
 });
 
+// @route   PUT /api/expenses/:id
+// @desc    Update existing expense
+// @access  Private
+router.put('/:id', auth, async (req, res) => {
+    const { amount, category, date, paymentMethod, note, type } = req.body;
+
+    // Build expense object
+    const expenseFields = {};
+    if (amount) expenseFields.amount = amount;
+    if (category) expenseFields.category = category;
+    if (date) expenseFields.date = date;
+    if (paymentMethod) expenseFields.paymentMethod = paymentMethod;
+    if (note) expenseFields.note = note;
+    if (type) expenseFields.type = type;
+
+    try {
+        let expense = await Expense.findById(req.params.id);
+
+        if (!expense) return res.status(404).json({ msg: 'Expense not found' });
+
+        // Make sure user owns expense
+        if (expense.userId.toString() !== req.user.id) {
+            return res.status(401).json({ msg: 'Not authorized' });
+        }
+
+        expense = await Expense.findByIdAndUpdate(
+            req.params.id,
+            { $set: expenseFields },
+            { new: true }
+        );
+
+        res.json(expense);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;

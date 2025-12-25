@@ -15,6 +15,7 @@ import SignupScreen from '../screens/SignupScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import InsightsScreen from '../screens/InsightsScreen';
+import BudgetScreen from '../screens/BudgetScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -40,6 +41,7 @@ function AppStack() {
                 }}
             />
             <Stack.Screen name="Insights" component={InsightsScreen} options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="Budget" component={BudgetScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
     )
 }

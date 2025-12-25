@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { addExpense, fetchCategories } from '../store/expensesSlice';
+import { addExpense, editExpense, fetchCategories } from '../store/expensesSlice'; // Import editExpense
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -33,9 +33,13 @@ export const CATEGORIES = [...DEFAULT_EXPENSE_CATEGORIES, ...DEFAULT_INCOME_CATE
 
 const PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Wallet', 'Bank', 'Other'];
 
-export default function AddExpenseScreen({ navigation }) {
+export default function AddExpenseScreen({ navigation, route }) {
     const dispatch = useDispatch();
     const { categories: customCategories } = useSelector((state) => state.expenses);
+
+    // Check if we are editing
+    const expenseToEdit = route.params?.expense;
+    const isEditMode = !!expenseToEdit;
 
     const [type, setType] = useState('expense'); // 'expense' | 'income'
     const [amount, setAmount] = useState('');
@@ -50,41 +54,66 @@ export default function AddExpenseScreen({ navigation }) {
         dispatch(fetchCategories());
     }, []);
 
+    // Initialize state if editing
+    useEffect(() => {
+        if (expenseToEdit) {
+            setType(expenseToEdit.type || 'expense');
+            setAmount(expenseToEdit.amount.toString());
+            setCategory(expenseToEdit.category);
+            setNote(expenseToEdit.note || '');
+            setPaymentMethod(expenseToEdit.paymentMethod || 'Cash');
+            setDate(new Date(expenseToEdit.date));
+        }
+    }, [expenseToEdit]);
+
     // Merge defaults with custom categories
     const availableCategories = type === 'expense'
         ? [...DEFAULT_EXPENSE_CATEGORIES, ...customCategories.filter(c => c.type === 'expense')]
         : [...DEFAULT_INCOME_CATEGORIES, ...customCategories.filter(c => c.type === 'income')];
 
-    // Reset category when type changes
+    // Reset category when type changes (only if not editing initially or user switched type manually)
     useEffect(() => {
-        if (availableCategories.length > 0) {
-            setCategory(availableCategories[0].id || availableCategories[0].name);
+        if (!isEditMode || type !== expenseToEdit.type) {
+            if (availableCategories.length > 0) {
+                setCategory(availableCategories[0].id || availableCategories[0].name);
+            }
         }
     }, [type]);
 
-    const handleAdd = async () => {
+    const handleSave = async () => {
         if (!amount) {
             Alert.alert('Error', 'Please enter amount');
             return;
         }
 
         setIsLoading(true);
-        const result = await dispatch(addExpense({
+        const expenseData = {
             type,
             amount: parseFloat(amount),
             category: category,
             note,
             paymentMethod,
             date: date.toISOString(),
-        }));
+        };
+
+        let result;
+        if (isEditMode) {
+            result = await dispatch(editExpense({
+                id: expenseToEdit._id,
+                updatedData: expenseData
+            }));
+        } else {
+            result = await dispatch(addExpense(expenseData));
+        }
+
         setIsLoading(false);
 
-        if (addExpense.fulfilled.match(result)) {
+        if (editExpense.fulfilled.match(result) || addExpense.fulfilled.match(result)) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             navigation.goBack();
         } else {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            Alert.alert('Error', 'Failed to add transaction');
+            Alert.alert('Error', result.payload || 'Failed to save transaction');
         }
     };
 
@@ -113,7 +142,7 @@ export default function AddExpenseScreen({ navigation }) {
 
             <View className="pt-4 px-4 pb-2">
                 <View className="flex-row items-center justify-between mb-4">
-                    <Text className="text-2xl font-bold text-[#1D1B20]">New Transaction</Text>
+                    <Text className="text-2xl font-bold text-[#1D1B20]">{isEditMode ? 'Edit Transaction' : 'New Transaction'}</Text>
                     <TouchableOpacity onPress={() => navigation.goBack()} className="p-2 bg-gray-100 rounded-full">
                         <Ionicons name="close" size={24} color="#1D1B20" />
                     </TouchableOpacity>
@@ -282,10 +311,10 @@ export default function AddExpenseScreen({ navigation }) {
                         <TouchableOpacity
                             className="w-full py-5 rounded-full items-center shadow-lg active:opacity-90 mt-4 mb-8"
                             style={{ backgroundColor: themeColor }}
-                            onPress={handleAdd}
+                            onPress={handleSave}
                             disabled={isLoading}
                         >
-                            {isLoading ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-xl">Save Transaction</Text>}
+                            {isLoading ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-xl">{isEditMode ? 'Update Transaction' : 'Save Transaction'}</Text>}
                         </TouchableOpacity>
 
                     </View>

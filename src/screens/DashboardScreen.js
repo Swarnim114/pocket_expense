@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, RefreshControl, Image, Dimensions } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchExpenses, deleteExpense } from '../store/expensesSlice';
+import { fetchExpenses, deleteExpense, hydrateExpenses } from '../store/expensesSlice';
 import { logout } from '../store/authSlice';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ export default function DashboardScreen({ navigation }) {
     const { user } = useSelector((state) => state.auth);
 
     useEffect(() => {
+        dispatch(hydrateExpenses());
         dispatch(fetchExpenses());
     }, []);
 
@@ -89,7 +90,15 @@ export default function DashboardScreen({ navigation }) {
                 entering={FadeInDown.delay(index * 100).springify()}
                 layout={Layout.springify()}
             >
-                <View className="bg-white rounded-[20px] p-4 mb-3 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                        Haptics.selectionAsync();
+                        // Navigate to AddExpense with param 'expense' to trigger Edit Mode
+                        navigation.navigate('AddExpense', { expense: item });
+                    }}
+                    className="bg-white rounded-[20px] p-4 mb-3 border border-gray-100 shadow-sm flex-row items-center justify-between active:scale-[0.98] transition-transform"
+                >
                     {/* Left Side: Icon + Text */}
                     <View className="flex-row items-center flex-1">
                         <View
@@ -118,8 +127,8 @@ export default function DashboardScreen({ navigation }) {
                             <Ionicons name="trash-outline" size={18} color="#EF4444" opacity={0.8} />
                         </TouchableOpacity>
                     </View>
-                </View>
-            </Animated.View>
+                </TouchableOpacity>
+            </Animated.View >
         );
     };
 
@@ -135,9 +144,14 @@ export default function DashboardScreen({ navigation }) {
                         <Text className="text-gray-500 font-medium text-sm">Welcome Back,</Text>
                         <Text className="text-2xl font-bold text-[#1F2937]">Dashboard</Text>
                     </View>
-                    <TouchableOpacity onPress={handleLogout} className="bg-white p-2 rounded-full border border-gray-100 shadow-sm">
-                        <Ionicons name="log-out-outline" size={24} color="#374151" />
-                    </TouchableOpacity>
+                    <View className="flex-row">
+                        <TouchableOpacity onPress={() => navigation.navigate('Budget')} className="bg-white p-2 rounded-full border border-gray-100 shadow-sm mr-2">
+                            <Ionicons name="settings-outline" size={24} color="#374151" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleLogout} className="bg-white p-2 rounded-full border border-gray-100 shadow-sm">
+                            <Ionicons name="log-out-outline" size={24} color="#374151" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Main Balance Card */}
